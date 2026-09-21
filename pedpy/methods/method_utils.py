@@ -4,15 +4,13 @@
 import itertools
 import logging
 import warnings
-from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Callable, Final, List, Optional, Tuple, TypeAlias
+from typing import Callable, Final, Optional, Tuple, TypeAlias
 
 import numpy as np
 import pandas as pd
 import shapely
-from scipy.spatial import Voronoi
 
 from pedpy.column_identifier import (
     CROSSING_FRAME_COL,
@@ -40,12 +38,18 @@ from pedpy.column_identifier import (
 )
 from pedpy.data.geometry import MeasurementArea, MeasurementLine, WalkableArea
 from pedpy.data.trajectory_data import TrajectoryData
+from pedpy.errors import PedPyTypeError, PedPyValueError
 
 _log = logging.getLogger(__name__)
 
-LambdaGroupFunction: TypeAlias = Callable[
-    [pd.DataFrame, MeasurementLine], pd.DataFrame
-]
+LambdaGroupFunction: TypeAlias = Callable[[pd.DataFrame, MeasurementLine], pd.DataFrame]
+
+
+def _check_trajectory_data(traj_data: TrajectoryData, param_name: str = "traj_data") -> None:
+    if not isinstance(traj_data, TrajectoryData):
+        raise PedPyTypeError(
+            f"Expected '{param_name}' to be a TrajectoryData, got {type(traj_data).__name__!r} instead."
+        )
 
 
 class SpeedCalculation(Enum):  # pylint: disable=too-few-public-methods
@@ -89,21 +93,7 @@ class Cutoff:
     quad_segments: int = 3
 
 
-class InputError(Exception):
-    """Class reflecting errors when incorrect input was given."""
-
-    def __init__(self, message):
-        """Create InputError with the given message.
-
-        Args:
-            message: Error message
-        """
-        self.message = message
-
-
-def is_trajectory_valid(
-    *, traj_data: TrajectoryData, walkable_area: WalkableArea
-) -> bool:
+def is_trajectory_valid(*, traj_data: TrajectoryData, walkable_area: WalkableArea) -> bool:
     """Checks if all trajectory data points lie within the given walkable area.
 
     Args:
@@ -114,14 +104,11 @@ def is_trajectory_valid(
     Returns:
         All points lie within walkable area
     """
-    return get_invalid_trajectory(
-        traj_data=traj_data, walkable_area=walkable_area
-    ).empty
+    _check_trajectory_data(traj_data)
+    return get_invalid_trajectory(traj_data=traj_data, walkable_area=walkable_area).empty
 
 
-def get_invalid_trajectory(
-    *, traj_data: TrajectoryData, walkable_area: WalkableArea
-) -> pd.DataFrame:
+def get_invalid_trajectory(*, traj_data: TrajectoryData, walkable_area: WalkableArea) -> pd.DataFrame:
     """Returns all trajectory data points outside the given walkable area.
 
     Args:
@@ -132,9 +119,8 @@ def get_invalid_trajectory(
     Returns:
         DataFrame showing all data points outside the given walkable area
     """
-    return traj_data.data.loc[
-        ~shapely.within(traj_data.data.point, walkable_area.polygon)
-    ]
+    _check_trajectory_data(traj_data)
+    return traj_data.data.loc[~shapely.within(traj_data.data.point, walkable_area.polygon)]
 
 
 def compute_frame_range_in_area(
@@ -186,10 +172,9 @@ def compute_frame_range_in_area(
         the pedestrian crossed the second or first line, and the created
         measurement area
     """
+    _check_trajectory_data(traj_data)
     # Create the second measurement line with the given offset
-    second_line = MeasurementLine(
-        shapely.offset_curve(measurement_line.line, distance=width)
-    )
+    second_line = MeasurementLine(shapely.offset_curve(measurement_line.line, distance=width))
 
     # Reverse the order of the coordinates for the second line string to
     # create a rectangular area between the lines
@@ -200,9 +185,7 @@ def compute_frame_range_in_area(
         ]
     )
 
-    inside_range = _get_continuous_parts_in_area(
-        traj_data=traj_data, measurement_area=measurement_area
-    )
+    inside_range = _get_continuous_parts_in_area(traj_data=traj_data, measurement_area=measurement_area)
 
     crossing_frames_first = _compute_crossing_frames(
         traj_data=traj_data,
@@ -257,20 +240,12 @@ def compute_frame_range_in_area(
     )
 
     frame_range_between_lines = frame_range_between_lines[
-        (
-            frame_range_between_lines.start_crossed_1
-            & frame_range_between_lines.end_crossed_2
-        )
-        | (
-            frame_range_between_lines.start_crossed_2
-            & frame_range_between_lines.end_crossed_1
-        )
+        (frame_range_between_lines.start_crossed_1 & frame_range_between_lines.end_crossed_2)
+        | (frame_range_between_lines.start_crossed_2 & frame_range_between_lines.end_crossed_1)
     ]
 
     return (
-        frame_range_between_lines.loc[
-            :, (ID_COL, FIRST_FRAME_COL, LAST_FRAME_COL)
-        ],
+        frame_range_between_lines.loc[:, (ID_COL, FIRST_FRAME_COL, LAST_FRAME_COL)],
         measurement_area,
     )
 
@@ -316,13 +291,9 @@ def compute_neighbors(
             stacklevel=2,  # Makes the warning appear at the caller level
         )
 
-        return _compute_neighbors_list(
-            individual_voronoi_data=individual_voronoi_data
-        )
+        return _compute_neighbors_list(individual_voronoi_data=individual_voronoi_data)
     else:
-        return _compute_neighbors_single(
-            individual_voronoi_data=individual_voronoi_data
-        )
+        return _compute_neighbors_single(individual_voronoi_data=individual_voronoi_data)
 
 
 def _compute_neighbors_list(
@@ -350,10 +321,7 @@ def _compute_neighbors_list(
         neighbors = np.where(touching, ids, np.nan)
 
         neighbors_list = [
-            np.array(neighbor)[~np.isnan(np.array(neighbor))]
-            .astype(int)
-            .tolist()
-            for neighbor in neighbors
+            np.array(neighbor)[~np.isnan(np.array(neighbor))].astype(int).tolist() for neighbor in neighbors
         ]
 
         frame_df = pd.DataFrame(
@@ -380,18 +348,14 @@ def _compute_neighbors_single(
     for frame, frame_data in individual_voronoi_data.groupby(FRAME_COL):
         polygons = frame_data[POLYGON_COL].to_numpy()
 
-        touching = shapely.dwithin(
-            polygons[:, np.newaxis], polygons[np.newaxis, :], 1e-9
-        )
+        touching = shapely.dwithin(polygons[:, np.newaxis], polygons[np.newaxis, :], 1e-9)
 
         # the peds are not neighbors of themselves
         np.fill_diagonal(touching, False)
 
         # Filter neighbor relationships based on the touching matrix
         ids = frame_data[ID_COL].to_numpy()
-        row_idx, col_idx = np.where(
-            touching
-        )  # Get row and column indices of True values
+        row_idx, col_idx = np.where(touching)  # Get row and column indices of True values
         id_column = ids[row_idx]  # Extract original IDs
         neighbor_column = ids[col_idx]  # Extract corresponding neighbor IDs
 
@@ -411,11 +375,7 @@ def _compute_neighbors_single(
         return pd.DataFrame(columns=[ID_COL, FRAME_COL, NEIGHBOR_ID_COL])
 
     # Concatenate all frames' data into a single DataFrame
-    return (
-        pd.concat(neighbor_df, ignore_index=True)
-        .sort_values(by=[FRAME_COL, ID_COL])
-        .reset_index(drop=True)
-    )
+    return pd.concat(neighbor_df, ignore_index=True).sort_values(by=[FRAME_COL, ID_COL]).reset_index(drop=True)
 
 
 def compute_neighbor_distance(
@@ -441,15 +401,16 @@ def compute_neighbor_distance(
             with parameter :code:`as_list=False` can be used here as input.
 
     Raises:
-        ValueError: When passing a result of :func:`~compute_neighbors`
+        PedPyValueError: When passing a result of :func:`~compute_neighbors`
             with parameter :code:`as_list=True`.
 
     Returns:
         DataFrame containing the columns 'id', 'frame', 'neighbor_id' and
         'distance'.
     """
+    _check_trajectory_data(traj_data)
     if NEIGHBORS_COL in neighborhood.columns:
-        raise ValueError(
+        raise PedPyValueError(
             "Cannot compute distance between neighbors with list-format data. "
             "Please use the result of compute_neighbors with parameter "
             "as_list=False."
@@ -473,14 +434,10 @@ def compute_neighbor_distance(
         neighbors_with_position["point_neighbor"],
     )
 
-    return neighbors_with_position[
-        [ID_COL, FRAME_COL, NEIGHBOR_ID_COL, DISTANCE_COL]
-    ]
+    return neighbors_with_position[[ID_COL, FRAME_COL, NEIGHBOR_ID_COL, DISTANCE_COL]]
 
 
-def compute_time_distance_line(
-    *, traj_data: TrajectoryData, measurement_line: MeasurementLine
-) -> pd.DataFrame:
+def compute_time_distance_line(*, traj_data: TrajectoryData, measurement_line: MeasurementLine) -> pd.DataFrame:
     """Compute the time and distance to the measurement line.
 
     Compute the time (in frames) and distance to the first crossing of the
@@ -494,22 +451,19 @@ def compute_time_distance_line(
         measurement_line (MeasurementLine): line which is crossed
 
     Returns:
-        DataFrame containing 'id', 'frame', 'time' (seconds until
-        crossing),  and 'distance' (meters to measurement line)
+        DataFrame containing 'id', 'frame', 'distance' (meters to measurement
+        line), and 'time' (seconds until crossing)
     """
-    df_distance_time = traj_data.data[[ID_COL, FRAME_COL, POINT_COL]].copy(
-        deep=True
-    )
+    _check_trajectory_data(traj_data)
+    df_distance_time = traj_data.data[[ID_COL, FRAME_COL, POINT_COL]].copy(deep=True)
 
     # Compute distance to measurement line
-    df_distance_time[DISTANCE_COL] = shapely.distance(
-        df_distance_time[POINT_COL], measurement_line.line
-    )
+    df_distance_time[DISTANCE_COL] = shapely.distance(df_distance_time[POINT_COL], measurement_line.line)
 
     # Compute time to entrance
-    crossing_frame = compute_crossing_frames(
-        traj_data=traj_data, measurement_line=measurement_line
-    ).rename(columns={FRAME_COL: CROSSING_FRAME_COL})
+    crossing_frame = compute_crossing_frames(traj_data=traj_data, measurement_line=measurement_line).rename(
+        columns={FRAME_COL: CROSSING_FRAME_COL}
+    )
     df_distance_time = df_distance_time.merge(crossing_frame, on=ID_COL)
     df_distance_time[TIME_COL] = (
         df_distance_time[CROSSING_FRAME_COL] - df_distance_time[FRAME_COL]
@@ -526,7 +480,7 @@ def compute_individual_voronoi_polygons(
     traj_data: TrajectoryData,
     walkable_area: WalkableArea,
     cut_off: Optional[Cutoff] = None,
-    use_blind_points: bool = True,
+    use_blind_points: Optional[bool] = None,
 ) -> pd.DataFrame:
     """Compute the individual Voronoi polygon for each person and frame.
 
@@ -565,103 +519,146 @@ def compute_individual_voronoi_polygons(
         :width: 80 %
         :align: center
 
-    For allowing the computation of the Voronoi polygons when less than 4
-    pedestrians are in the walkable area, 4 extra points will be added outside
-    the walkable area with a significant distance. These will have no effect
-    on the size of the computed Voronoi polygons. This behavior can be turned
-    off by setting :code:`use_blind_points = False`. When turned off no Voronoi
-    polygons will be computed for frames with less than 4 persons, also
-    pedestrians walking in a line can lead to issues in the computation of the
-    Voronoi tesselation.
-
     Args:
         traj_data (TrajectoryData): trajectory data
         walkable_area (WalkableArea): bounding area, where pedestrian are
                 supposed to walk
         cut_off (Cutoff): cutoff information, which provide the largest
                 possible extend of a single Voronoi polygon
-        use_blind_points (bool): adds extra 4 points outside the walkable area
-                to also compute voronoi cells when less than 4 peds are in the
-                walkable area (default: on!)
+        use_blind_points (bool): **Deprecated.** This parameter has no effect
+                and will be removed in a future version. The underlying
+                Voronoi computation now handles any number of pedestrians
+                (including fewer than 4 and collinear configurations)
+                natively via :func:`shapely.voronoi_polygons`.
 
     Returns:
         DataFrame containing the columns 'id', 'frame','polygon' (
-        :class:`shapely.Polygon`), and 'individual_density' in :math:`1/m^2`.
+        :class:`shapely.Polygon`), and 'density' in :math:`1/m^2`.
     """
-    dfs = []
-
-    bounds = walkable_area.polygon.bounds
-    x_diff = abs(bounds[2] - bounds[0])
-    y_diff = abs(bounds[3] - bounds[1])
-    clipping_diameter = 2 * max(x_diff, y_diff)
-
-    blind_points = np.array(
-        [
-            [100 * (bounds[0] - x_diff), 100 * (bounds[1] - y_diff)],
-            [100 * (bounds[2] + x_diff), 100 * (bounds[1] - y_diff)],
-            [100 * (bounds[0] - x_diff), 100 * (bounds[3] + y_diff)],
-            [100 * (bounds[2] + x_diff), 100 * (bounds[3] + y_diff)],
-        ]
-    )
-
-    for frame, peds_in_frame in traj_data.data.groupby(traj_data.data.frame):
-        points = peds_in_frame[[X_COL, Y_COL]].to_numpy()
-        points = np.concatenate([points, blind_points])
-
-        # only skip analysis if less than 4 peds are in the frame and blind
-        # points are turned off
-        if not use_blind_points and len(points) - len(blind_points) < 4:
-            _log.warning(
-                f"Not enough pedestrians (N="
-                f"{len(points) - len(blind_points)}) available to "
-                f"calculate Voronoi cells for frame = {frame}. "
-                f"Consider enable use of blind points."
-            )
-            continue
-
-        vor = Voronoi(points)
-        voronoi_polygons = _clip_voronoi_polygons(vor, clipping_diameter)
-
-        voronoi_polygons = voronoi_polygons[:-4]
-        voronoi_in_frame = peds_in_frame.loc[:, (ID_COL, FRAME_COL, POINT_COL)]
-
-        # Compute the intersecting area with the walkable area
-        voronoi_in_frame[POLYGON_COL] = shapely.intersection(
-            voronoi_polygons, walkable_area.polygon
+    _check_trajectory_data(traj_data)
+    if use_blind_points is not None:
+        warnings.warn(
+            "The parameter 'use_blind_points' is deprecated and has no "
+            "effect. It will be removed in a future version. The underlying "
+            "Voronoi computation handles any number of pedestrians natively.",
+            category=DeprecationWarning,
+            stacklevel=2,
         )
 
+    all_ids = []
+    all_frames = []
+    all_polygons = []
+
+    wa_polygon = walkable_area.polygon
+
+    for _frame, peds_in_frame in traj_data.data.groupby(traj_data.data.frame):
+        points = peds_in_frame[POINT_COL].to_numpy()
+        coords = peds_in_frame[[X_COL, Y_COL]].to_numpy()
+        multipoint = shapely.MultiPoint(coords)
+
+        voronoi_gc = shapely.voronoi_polygons(multipoint, extend_to=wa_polygon, ordered=True)
+        voronoi_polys = shapely.get_parts(voronoi_gc)
+
+        # Intersect with walkable area
+        clipped = shapely.intersection(voronoi_polys, wa_polygon)
+
+        # Apply cutoff if specified
         if cut_off is not None:
-            radius = cut_off.radius
-            quad_segments = cut_off.quad_segments
-            voronoi_in_frame.polygon = shapely.intersection(
-                voronoi_in_frame.polygon,
-                shapely.buffer(
-                    peds_in_frame.point,
-                    radius,
-                    quad_segs=quad_segments,
-                ),
+            buffers = shapely.buffer(
+                points,
+                cut_off.radius,
+                quad_segs=cut_off.quad_segments,
             )
+            clipped = shapely.intersection(clipped, buffers)
 
-        # Only consider the parts of a multipolygon which contain the position
-        # of the pedestrian
-        voronoi_in_frame.loc[
-            shapely.get_type_id(voronoi_in_frame.polygon) != 3,
-            POLYGON_COL,
-        ] = voronoi_in_frame.loc[
-            shapely.get_type_id(voronoi_in_frame.polygon) != 3, :
-        ].apply(
-            lambda row: shapely.get_parts(row[POLYGON_COL])[
-                shapely.within(row.point, shapely.get_parts(row.polygon))
-            ][0],
-            axis=1,
+        # Resolve non-Polygon geometries (e.g. MultiPolygon from
+        # non-convex walkable areas) by selecting the part that
+        # contains the pedestrian's position
+        clipped = _resolve_multipolygons(clipped, points)
+
+        all_ids.append(peds_in_frame[ID_COL].values)
+        all_frames.append(peds_in_frame[FRAME_COL].values)
+        all_polygons.append(clipped)
+
+    if not all_ids:
+        return pd.DataFrame(
+            {
+                ID_COL: pd.Series(dtype=int),
+                FRAME_COL: pd.Series(dtype=int),
+                POLYGON_COL: pd.Series(dtype=object),
+                DENSITY_COL: pd.Series(dtype=float),
+            }
         )
 
-        dfs.append(voronoi_in_frame)
-
-    result = pd.concat(dfs)[[ID_COL, FRAME_COL, POLYGON_COL]]
-    result[DENSITY_COL] = 1.0 / shapely.area(result.polygon)
+    result = pd.DataFrame(
+        {
+            ID_COL: np.concatenate(all_ids),
+            FRAME_COL: np.concatenate(all_frames),
+            POLYGON_COL: np.concatenate(all_polygons),
+        }
+    )
+    result[DENSITY_COL] = 1.0 / shapely.area(result[POLYGON_COL].values)
 
     return result
+
+
+def _resolve_multipolygons(polygons: np.ndarray, points: np.ndarray) -> np.ndarray:
+    """Resolve non-Polygon geometries to the part containing the point.
+
+    When intersecting Voronoi cells with a non-convex walkable area,
+    the result may be a MultiPolygon or GeometryCollection. This
+    function selects the polygon part that contains the pedestrian's
+    position for each such geometry.
+
+    Args:
+        polygons: array of shapely geometries
+        points: array of shapely Points (one per polygon)
+
+    Returns:
+        Array of shapely Polygons
+
+    Raises:
+        PedPyValueError: if a pedestrian's position does not lie within any
+            polygon part of their Voronoi cell. This indicates the trajectory
+            data is inconsistent with the walkable area (e.g. the position is
+            outside the walkable area or inside an obstacle).
+    """
+    type_ids = shapely.get_type_id(polygons)
+    multi_mask = type_ids != 3  # not a simple Polygon
+
+    if not multi_mask.any():
+        return polygons
+
+    resolved = polygons.copy()
+    for idx in np.where(multi_mask)[0]:
+        parts = shapely.get_parts(polygons[idx])
+
+        # Filter to polygonal parts only (type_id 3 == Polygon).
+        # A GeometryCollection may also contain lines or points; selecting
+        # one of those would violate the return-type contract and cause
+        # division-by-zero when computing density (1 / area).
+        polygon_parts = parts[shapely.get_type_id(parts) == 3]
+
+        if len(polygon_parts) == 0:
+            raise PedPyValueError(
+                f"Pedestrian at position {points[idx]} has a Voronoi cell with "
+                f"no polygonal parts after intersection with the walkable area. "
+                f"Ensure all trajectory positions lie within the walkable area "
+                f"and outside any obstacles."
+            )
+
+        covers_mask = shapely.covers(polygon_parts, points[idx])
+        if not covers_mask.any():
+            raise PedPyValueError(
+                f"Pedestrian at position {points[idx]} does not lie within any "
+                f"part of their Voronoi cell. This indicates the trajectory "
+                f"position is outside the walkable area or inside an obstacle. "
+                f"Verify the trajectory data is consistent with the walkable area."
+            )
+
+        resolved[idx] = polygon_parts[covers_mask][0]
+
+    return resolved
 
 
 def compute_intersecting_polygons(
@@ -689,9 +686,7 @@ def compute_intersecting_polygons(
         polygon and the given measurement area as :class:`shapely.Polygon`.
     """
     df_intersection = individual_voronoi_data[[ID_COL, FRAME_COL]].copy()
-    df_intersection[INTERSECTION_COL] = shapely.intersection(
-        individual_voronoi_data.polygon, measurement_area.polygon
-    )
+    df_intersection[INTERSECTION_COL] = shapely.intersection(individual_voronoi_data.polygon, measurement_area.polygon)
     return df_intersection
 
 
@@ -725,6 +720,7 @@ def compute_crossing_frames(
         DataFrame containing the columns 'id', 'frame', where 'frame' is
         the frame where the measurement line is crossed.
     """
+    _check_trajectory_data(traj_data)
     return _compute_crossing_frames(
         traj_data=traj_data,
         measurement_line=measurement_line,
@@ -759,9 +755,7 @@ def _compute_crossing_frames(
     # resulting array looks as follows:
     # [[[x_0_start, y_0_start], [x_0_end, y_0_end]],
     #  [[x_1_start, y_1_start], [x_1_end, y_1_end]], ... ]
-    df_movement = _compute_individual_movement(
-        traj_data=traj_data, frame_step=1, bidirectional=False
-    )
+    df_movement = _compute_individual_movement(traj_data=traj_data, frame_step=1, bidirectional=False)
     df_movement["movement"] = shapely.linestrings(
         np.stack(
             [
@@ -772,14 +766,10 @@ def _compute_crossing_frames(
         )
     )
 
-    movement_crosses_line = shapely.intersects(
-        df_movement.movement, measurement_line.line
-    )
+    movement_crosses_line = shapely.intersects(df_movement.movement, measurement_line.line)
 
     if count_on_line:
-        crossing_frames = df_movement.loc[movement_crosses_line][
-            [ID_COL, FRAME_COL]
-        ]
+        crossing_frames = df_movement.loc[movement_crosses_line][[ID_COL, FRAME_COL]]
     else:
         # Case when crossing means movement crosses the line, but the end point
         # is not on it
@@ -787,85 +777,11 @@ def _compute_crossing_frames(
         # Minimum distance to consider crossing complete
         CROSSING_THRESHOLD: Final = 1e-5  # noqa: N806
 
-        movement_ends_on_line = (
-            shapely.distance(df_movement.end_position, measurement_line.line)
-            < CROSSING_THRESHOLD
-        )
+        movement_ends_on_line = shapely.distance(df_movement.end_position, measurement_line.line) < CROSSING_THRESHOLD
 
-        crossing_frames = df_movement.loc[
-            (movement_crosses_line) & (~movement_ends_on_line)
-        ][[ID_COL, FRAME_COL]]
+        crossing_frames = df_movement.loc[(movement_crosses_line) & (~movement_ends_on_line)][[ID_COL, FRAME_COL]]
 
     return crossing_frames
-
-
-def _clip_voronoi_polygons(  # pylint: disable=too-many-locals,invalid-name
-    voronoi: Voronoi, diameter: float
-) -> List[shapely.Polygon]:
-    """Generate Polygons from the Voronoi diagram.
-
-    Generate shapely.Polygon objects corresponding to the
-    regions of a scipy.spatial.Voronoi object, in the order of the
-    input points. The polygons for the infinite regions are large
-    enough that all points within a distance 'diameter' of a Voronoi
-    vertex are contained in one of the infinite polygons.
-    from: https://stackoverflow.com/a/52727406/9601068
-    """
-    polygons = []
-    centroid = voronoi.points.mean(axis=0)
-
-    # Mapping from (input point index, Voronoi point index) to list of
-    # unit vectors in the directions of the infinite ridges starting
-    # at the Voronoi point and neighbouring the input point.
-    ridge_direction = defaultdict(list)
-    for (p, q), rv in zip(
-        voronoi.ridge_points, voronoi.ridge_vertices, strict=False
-    ):
-        u, v = sorted(rv)
-        if u == -1:
-            # Infinite ridge starting at ridge point with index v,
-            # equidistant from input points with indexes p and q.
-            t = voronoi.points[q] - voronoi.points[p]  # tangent
-            n = np.array([-t[1], t[0]]) / np.linalg.norm(t)  # normal
-            midpoint = voronoi.points[[p, q]].mean(axis=0)
-            direction = np.sign(np.dot(midpoint - centroid, n)) * n
-            ridge_direction[p, v].append(direction)
-            ridge_direction[q, v].append(direction)
-
-    for i, r in enumerate(voronoi.point_region):
-        region = voronoi.regions[r]
-        if -1 not in region:
-            # Finite region.
-            polygons.append(shapely.polygons(voronoi.vertices[region]))
-            continue
-        # Infinite region.
-        inf = region.index(-1)  # Index of vertex at infinity.
-        j = region[(inf - 1) % len(region)]  # Index of previous vertex.
-        k = region[(inf + 1) % len(region)]  # Index of next vertex.
-        if j == k:
-            # Region has one Voronoi vertex with two ridges.
-            dir_j, dir_k = ridge_direction[i, j]
-        else:
-            # Region has two Voronoi vertices, each with one ridge.
-            (dir_j,) = ridge_direction[i, j]
-            (dir_k,) = ridge_direction[i, k]
-
-        # Length of ridges needed for the extra edge to lie at least
-        # 'diameter' away from all Voronoi vertices.
-        length = 2 * diameter / np.linalg.norm(dir_j + dir_k)
-
-        # Polygon consists of finite part plus an extra edge.
-        finite_part = voronoi.vertices[region[inf + 1 :] + region[:inf]]
-        extra_edge = np.array(
-            [
-                voronoi.vertices[j] + dir_j * length,
-                voronoi.vertices[k] + dir_k * length,
-            ]
-        )
-        polygons.append(
-            shapely.polygons(np.concatenate((finite_part, extra_edge)))
-        )
-    return polygons
 
 
 def _compute_individual_movement(
@@ -876,19 +792,13 @@ def _compute_individual_movement(
     speed_border_method: SpeedCalculation = SpeedCalculation.BORDER_ADAPTIVE,
 ) -> pd.DataFrame:
     if speed_border_method == SpeedCalculation.BORDER_EXCLUDE:
-        return _compute_movement_exclude_border(
-            traj_data, frame_step, bidirectional
-        )
+        return _compute_movement_exclude_border(traj_data, frame_step, bidirectional)
     if speed_border_method == SpeedCalculation.BORDER_SINGLE_SIDED:
-        return _compute_movement_single_sided_border(
-            traj_data, frame_step, bidirectional
-        )
+        return _compute_movement_single_sided_border(traj_data, frame_step, bidirectional)
     if speed_border_method == SpeedCalculation.BORDER_ADAPTIVE:
-        return _compute_movememnt_adaptive_border(
-            traj_data, frame_step, bidirectional
-        )
+        return _compute_movememnt_adaptive_border(traj_data, frame_step, bidirectional)
 
-    raise ValueError("speed border method not accepted")
+    raise PedPyValueError("speed border method not accepted")
 
 
 def _compute_movement_exclude_border(
@@ -917,27 +827,17 @@ def _compute_movement_exclude_border(
     """
     df_movement = traj_data.data.copy(deep=True)
 
-    df_movement[START_POSITION_COL] = df_movement.groupby(
-        by=ID_COL
-    ).point.shift(frame_step)
-    df_movement["start_frame"] = df_movement.groupby(by=ID_COL).frame.shift(
-        frame_step
-    )
+    df_movement[START_POSITION_COL] = df_movement.groupby(by=ID_COL).point.shift(frame_step)
+    df_movement["start_frame"] = df_movement.groupby(by=ID_COL).frame.shift(frame_step)
 
     if bidirectional:
-        df_movement[END_POSITION_COL] = df_movement.groupby(
-            df_movement.id
-        ).point.shift(-frame_step)
-        df_movement["end_frame"] = df_movement.groupby(
-            df_movement.id
-        ).frame.shift(-frame_step)
+        df_movement[END_POSITION_COL] = df_movement.groupby(df_movement.id).point.shift(-frame_step)
+        df_movement["end_frame"] = df_movement.groupby(df_movement.id).frame.shift(-frame_step)
     else:
         df_movement[END_POSITION_COL] = df_movement.point
         df_movement["end_frame"] = df_movement.frame
 
-    df_movement[WINDOW_SIZE_COL] = (
-        df_movement.end_frame - df_movement.start_frame
-    )
+    df_movement[WINDOW_SIZE_COL] = df_movement.end_frame - df_movement.start_frame
     return df_movement[
         [
             ID_COL,
@@ -976,35 +876,21 @@ def _compute_movement_single_sided_border(
     """
     df_movement = traj_data.data.copy(deep=True)
 
-    df_movement[START_POSITION_COL] = (
-        df_movement.groupby(by=ID_COL)
-        .point.shift(frame_step)
-        .fillna(df_movement.point)
-    )
-    df_movement["start_frame"] = (
-        df_movement.groupby(by=ID_COL)
-        .frame.shift(frame_step)
-        .fillna(df_movement.frame)
-    )
+    df_movement[START_POSITION_COL] = df_movement.groupby(by=ID_COL).point.shift(frame_step).fillna(df_movement.point)
+    df_movement["start_frame"] = df_movement.groupby(by=ID_COL).frame.shift(frame_step).fillna(df_movement.frame)
 
     if bidirectional:
         df_movement[END_POSITION_COL] = (
-            df_movement.groupby(df_movement.id)
-            .point.shift(-frame_step)
-            .fillna(df_movement.point)
+            df_movement.groupby(df_movement.id).point.shift(-frame_step).fillna(df_movement.point)
         )
         df_movement["end_frame"] = (
-            df_movement.groupby(df_movement.id)
-            .frame.shift(-frame_step)
-            .fillna(df_movement.frame)
+            df_movement.groupby(df_movement.id).frame.shift(-frame_step).fillna(df_movement.frame)
         )
     else:
         df_movement[END_POSITION_COL] = df_movement.point
         df_movement["end_frame"] = df_movement.frame
 
-    df_movement[WINDOW_SIZE_COL] = (
-        df_movement.end_frame - df_movement.start_frame
-    )
+    df_movement[WINDOW_SIZE_COL] = df_movement.end_frame - df_movement.start_frame
     return df_movement[
         [
             ID_COL,
@@ -1043,22 +929,14 @@ def _compute_movememnt_adaptive_border(
     """
     df_movement = traj_data.data.copy(deep=True)
 
-    frame_infos = df_movement.groupby(by=ID_COL).agg(
-        frame_min=(FRAME_COL, "min"), frame_max=(FRAME_COL, "max")
-    )
+    frame_infos = df_movement.groupby(by=ID_COL).agg(frame_min=(FRAME_COL, "min"), frame_max=(FRAME_COL, "max"))
     df_movement = df_movement.merge(frame_infos, on=ID_COL)
 
-    df_movement["distance_min"] = np.abs(
-        df_movement.frame - df_movement["frame_min"]
-    )
-    df_movement["distance_max"] = np.abs(
-        df_movement.frame - df_movement["frame_max"]
-    )
+    df_movement["distance_min"] = np.abs(df_movement.frame - df_movement["frame_min"])
+    df_movement["distance_max"] = np.abs(df_movement.frame - df_movement["frame_max"])
     df_movement[WINDOW_SIZE_COL] = np.minimum(
         frame_step,
-        np.minimum(
-            df_movement.distance_min.values, df_movement.distance_max.values
-        ),
+        np.minimum(df_movement.distance_min.values, df_movement.distance_max.values),
     )
     df_movement["start_frame"] = df_movement.frame - df_movement.window_size
     df_movement["end_frame"] = df_movement.frame + df_movement.window_size
@@ -1110,16 +988,12 @@ def _compute_individual_movement_acceleration(
     *,
     traj_data: TrajectoryData,
     frame_step: int,
-    acceleration_border_method: AccelerationCalculation = (
-        AccelerationCalculation.BORDER_EXCLUDE
-    ),
+    acceleration_border_method: AccelerationCalculation = (AccelerationCalculation.BORDER_EXCLUDE),
 ) -> pd.DataFrame:
     if acceleration_border_method == AccelerationCalculation.BORDER_EXCLUDE:
-        return _compute_movement_acceleration_exclude_border(
-            traj_data, frame_step
-        )
+        return _compute_movement_acceleration_exclude_border(traj_data, frame_step)
 
-    raise ValueError("acceleration border method not accepted")
+    raise PedPyValueError("acceleration border method not accepted")
 
 
 def _compute_movement_acceleration_exclude_border(
@@ -1148,19 +1022,11 @@ def _compute_movement_acceleration_exclude_border(
     """
     df_movement = traj_data.data.copy(deep=True)
 
-    df_movement[START_POSITION_COL] = df_movement.groupby(
-        by=ID_COL
-    ).point.shift(2 * frame_step)
-    df_movement["start_frame"] = df_movement.groupby(by=ID_COL).frame.shift(
-        2 * frame_step
-    )
+    df_movement[START_POSITION_COL] = df_movement.groupby(by=ID_COL).point.shift(2 * frame_step)
+    df_movement["start_frame"] = df_movement.groupby(by=ID_COL).frame.shift(2 * frame_step)
 
-    df_movement[MID_POSITION_COL] = df_movement.groupby(by=ID_COL).point.shift(
-        frame_step
-    )
-    df_movement["mid_frame"] = df_movement.groupby(by=ID_COL).frame.shift(
-        frame_step
-    )
+    df_movement[MID_POSITION_COL] = df_movement.groupby(by=ID_COL).point.shift(frame_step)
+    df_movement["mid_frame"] = df_movement.groupby(by=ID_COL).frame.shift(frame_step)
 
     df_movement[END_POSITION_COL] = df_movement.point
     df_movement["end_frame"] = df_movement.frame
@@ -1178,9 +1044,7 @@ def _compute_movement_acceleration_exclude_border(
     ].dropna()
 
 
-def _get_continuous_parts_in_area(
-    *, traj_data: TrajectoryData, measurement_area: MeasurementArea
-) -> pd.DataFrame:
+def _get_continuous_parts_in_area(*, traj_data: TrajectoryData, measurement_area: MeasurementArea) -> pd.DataFrame:
     """Compute the time-continuous parts of each pedestrian in the area.
 
     Compute the time-continuous parts in which the pedestrians are inside
@@ -1197,12 +1061,8 @@ def _get_continuous_parts_in_area(
         is inside the measurement area, and 'leaving_frame' is first frame a
         pedestrian after the pedestrian has left the measurement area.
     """
-    inside = traj_data.data.loc[
-        shapely.within(traj_data.data.point, measurement_area.polygon), :
-    ].copy()
-    inside.loc[:, "g"] = inside.groupby(
-        by=ID_COL, group_keys=False
-    ).frame.apply(lambda x: x.diff().ge(2).cumsum())
+    inside = traj_data.data.loc[shapely.within(traj_data.data.point, measurement_area.polygon), :].copy()
+    inside.loc[:, "g"] = inside.groupby(by=ID_COL, group_keys=False).frame.apply(lambda x: x.diff().ge(2).cumsum())
     inside_range = (
         inside.groupby([ID_COL, "g"])
         .agg(
@@ -1264,22 +1124,18 @@ def _compute_orthogonal_speed_in_relation_to_proportion(
         'v_x', 'v_y' and 'polygon'.
     """
     normal_vector = measurement_line.normal_vector()
-    return (
-        group[V_X_COL] * normal_vector[0] + group[V_Y_COL] * normal_vector[1]
-    ) * _compute_partial_line_length(group[POLYGON_COL], measurement_line)
+    return (group[V_X_COL] * normal_vector[0] + group[V_Y_COL] * normal_vector[1]) * _compute_partial_line_length(
+        group[POLYGON_COL], measurement_line
+    )
 
 
-def _compute_partial_line_length(
-    polygon: shapely.Polygon, measurement_line: MeasurementLine
-) -> float:
+def _compute_partial_line_length(polygon: shapely.Polygon, measurement_line: MeasurementLine) -> float:
     """Calculates the fraction of the length that is intersected by the polygon.
 
     .
     """
     line = measurement_line.line
-    return shapely.length(shapely.intersection(polygon, line)) / shapely.length(
-        line
-    )
+    return shapely.length(shapely.intersection(polygon, line)) / shapely.length(line)
 
 
 def _apply_lambda_for_intersecting_frames(
@@ -1347,9 +1203,7 @@ def _apply_lambda_for_intersecting_frames(
           corresponding result column.
     """
     merged_table = individual_voronoi_polygons[
-        shapely.intersects(
-            individual_voronoi_polygons[POLYGON_COL], measurement_line.line
-        )
+        shapely.intersects(individual_voronoi_polygons[POLYGON_COL], measurement_line.line)
     ]
 
     merged_table = merged_table.merge(species, on="id", how="left")
@@ -1366,7 +1220,10 @@ def _apply_lambda_for_intersecting_frames(
     if not species_1.empty:
         species_1 = (
             species_1.groupby(FRAME_COL, group_keys=False)
-            .apply(lambda group: lambda_for_group(group, measurement_line))
+            .apply(
+                lambda group: lambda_for_group(group, measurement_line),
+                include_groups=False,
+            )
             .reset_index()
         )
         species_1.columns = [FRAME_COL, column_id_sp1]
@@ -1376,16 +1233,17 @@ def _apply_lambda_for_intersecting_frames(
     if not species_2.empty:
         species_2 = (
             species_2.groupby(FRAME_COL, group_keys=False)
-            .apply(lambda group: lambda_for_group(group, measurement_line))
+            .apply(
+                lambda group: lambda_for_group(group, measurement_line),
+                include_groups=False,
+            )
             .reset_index()
         )
         species_2.columns = [FRAME_COL, column_id_sp2]
     else:
         species_2 = pd.DataFrame(columns=[FRAME_COL, column_id_sp2])
 
-    result = species_1.merge(
-        species_2, on=FRAME_COL, how="outer"
-    ).infer_objects(copy=False)
+    result = species_1.merge(species_2, on=FRAME_COL, how="outer").infer_objects()
     return result.sort_values(by=FRAME_COL, ascending=False)
 
 
@@ -1412,9 +1270,7 @@ def is_species_valid(
         True if all needed data is provided by the species dataframe else False.
     """
     intersecting_polygons = individual_voronoi_polygons[
-        shapely.intersects(
-            individual_voronoi_polygons[POLYGON_COL], measurement_line.line
-        )
+        shapely.intersects(individual_voronoi_polygons[POLYGON_COL], measurement_line.line)
     ]
     return intersecting_polygons[ID_COL].isin(species[ID_COL]).all()
 
@@ -1439,30 +1295,17 @@ def is_individual_speed_valid(
         measurement_line (MeasurementLine): measurement line
 
     Returns:
-        DATA_CORRECT if all needed data is provided
-            by the individual speed dataframe,
-        COLUMN_MISSING if there is a column missing,
-        ENTRY_MISSING if there is no matching entry
-            for a frame where polygon and line intersect.
+        DATA_CORRECT if all needed data is provided by the individual speed
+        dataframe, COLUMN_MISSING if there is a column missing, ENTRY_MISSING
+        if there is no matching entry for a frame where polygon and line
+        intersect.
     """
-    if not all(
-        column in individual_speed.columns
-        for column in [ID_COL, FRAME_COL, V_X_COL, V_Y_COL]
-    ):
+    if not all(column in individual_speed.columns for column in [ID_COL, FRAME_COL, V_X_COL, V_Y_COL]):
         return DataValidationStatus.COLUMN_MISSING
     intersecting_polygons = individual_voronoi_polygons[
-        shapely.intersects(
-            individual_voronoi_polygons[POLYGON_COL], measurement_line.line
-        )
+        shapely.intersects(individual_voronoi_polygons[POLYGON_COL], measurement_line.line)
     ]
-    if (
-        not intersecting_polygons.merge(
-            individual_speed, on=["id", "frame"], how="left"
-        )
-        .notna()
-        .all()
-        .all()
-    ):
+    if not intersecting_polygons.merge(individual_speed, on=["id", "frame"], how="left").notna().all().all():
         return DataValidationStatus.ENTRY_MISSING
 
     return DataValidationStatus.DATA_CORRECT

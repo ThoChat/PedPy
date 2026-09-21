@@ -2,15 +2,81 @@
 Changelog
 *********
 
-Version 1.4.0 (2025-XX-YY)
+Version 1.6.0 (YYYY-MM-DD)
 ==========================
+
+**New features:**
+
+**What's changed:**
+
+**Fixes:**
+
+- Fix duplicate columns in :code:`plot_voronoi_cells`: When plotting Voronoi cells, the function now correctly handles cases where duplicate columns may arise in the output DataFrame, ensuring that each column is unique and accurately represents the corresponding data.
+- Minor improvements in documentation, e.g., ensuring correct rendering of equations.
+
+Version 1.5.0 (2026-06-02)
+==========================
+
+**New features:**
+
+- Add new preprocessing methods for cleaning trajectory data before analysis:
+    * Project trajectories into walkable area
+    * Added functions for outlier and anomaly detection
+- Add method to compute RSET maps
+
+**What's changed:**
+
+- Add support for Python 3.14
+- Improved Voronoi polygon computation with ~45% runtime improvement:
+    * Behavioral change: :func:`~compute_individual_voronoi_polygons` now computes Voronoi cells for frames with fewer than 4 pedestrians.
+    Previously, with :code:`use_blind_points=False`, such frames were skipped. The :code:`use_blind_points` parameter is now deprecated and has no effect.
+    If you need to replicate the old behavior, filter the results manually:
+
+    .. code-block:: python
+
+       # Filter out frames with < 4 pedestrians (old behavior)
+       result = compute_individual_voronoi_polygons(traj_data, walkable_area)
+       peds_per_frame = traj_data.data.groupby('frame').size()
+       result = result[result['frame'].isin(peds_per_frame[peds_per_frame >= 4].index)]
+
+- Improve profile computation memory efficiency
+- Unification of plot function options: All plotting functions now accept a unified set of keyword arguments, improving consistency and ease of use across different plot types.
+
+**Fixes:**
+
+- Correctly plot Voronoi cells
+- Return Pandas DataFrame in all analysis functions as specified in the documentation
+- Minor plotting issues
+
+Version 1.4.0 (2025-09-08)
+==========================
+
+**New features:**
+
+- Add new trajectory loaders for the following simulation tools:
+    * `Vadere <https://www.vadere.org/>`__
+    * `crowd:it <https://www.accu-rate.de/software/crowdit/>`__
+    * `Pathfinder <https://www.pathfinder.com/>`__
+- Compute profiles in specified measurement area
+- Compute neighbor distance
+- Introduce *PedPy* errors
+
+**What's changed:**
+
+- Improved color handling in :code:`plot_neighborhood` function
+- Modernized GitHub ReadMe
+
+**Fixes:**
+
+- Fixed geometry creation issues when obstacles touch boundary edges
+- Resolved time-distance plotting bug to properly include all initial trajectory points
 
 Version 1.3.0 (2025-02-02)
 ==========================
 
 **New feature:**
 
-*Continuity equation and fundamental diagram of pedestrians* [#f1]_ describes a new approach to compute the fundamental diagram for pedestrian dynamics. 
+*Continuity equation and fundamental diagram of pedestrians* [#f1]_ describes a new approach to compute the fundamental diagram for pedestrian dynamics.
 This approach uses Voronoi decomposition to allow defintiions of density, speed and flow on the basis of trajectories in accordance with the continuity equation.
 It also enables measurement along a line, handling different motion directions without losing velocity sign.
 
@@ -19,11 +85,11 @@ How to use the new method is shown in the following Jupyter-Notebook: :doc:`Fund
 .. figure:: images/fd_continuity.png
     :width: 90%
     :align: center
-    
-    Left: Voronoi decomposition, Voronoi cells which intersect with the measurement line are indicated by color. 
+
+    Left: Voronoi decomposition, Voronoi cells which intersect with the measurement line are indicated by color.
     Right: Voronoi decomposition, Red and blue indicate the main movememnt direction.
 
-.. [#f1] J. Adrian, A. K. Boomers, S. Paetzke, and A. Seyfried, “Continuity equation and fundamental diagram of pedestrians.” arXiv, 2024. doi: 10.48550/ARXIV.2409.11857. Available: https://arxiv.org/abs/2409.11857 
+.. [#f1] J. Adrian, A. K. Boomers, S. Paetzke, and A. Seyfried, “Continuity equation and fundamental diagram of pedestrians.” arXiv, 2024. doi: 10.48550/ARXIV.2409.11857. Available: https://arxiv.org/abs/2409.11857
 
 Version 1.2.0 (2024-09-27)
 ==========================
@@ -47,7 +113,7 @@ Version 1.2.0 (2024-09-27)
 - Improve documentation:
     * Fix in developer guide
     * Fix data types not displayed correctly in some parts of documentation
-    * Restructure methods page and add new category names 
+    * Restructure methods page and add new category names
     * Add details about the Well-Known-Text (WKT) format
     * General minor documentation fixes and improvements
 

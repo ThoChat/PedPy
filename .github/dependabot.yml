@@ -1,0 +1,43 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      general-dependencies:
+        patterns:
+          - "*"
+    allow:
+      - dependency-type: "all"
+    ignore:
+      - dependency-name: "numpy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pandas"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      pre-commit-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # numpy is capped below 2.5 in the mypy hook's additional_dependencies
+      # to avoid a stub parse error (PEP 695 syntax needs Python 3.12+, but
+      # mypy is configured for python_version = 3.11). Update this pin
+      # manually if that constraint ever changes.
+      - dependency-name: "numpy"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      github-actions-dependencies:
+        patterns:
+          - "*"
+    allow:
+      - dependency-type: "all"

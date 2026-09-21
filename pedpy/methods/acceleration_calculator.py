@@ -1,6 +1,6 @@
 """Module containing functions to compute accelerations."""
 
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -10,22 +10,12 @@ import shapely
 from pedpy.column_identifier import ACC_COL, A_X_COL, A_Y_COL, FRAME_COL, ID_COL
 from pedpy.data.geometry import MeasurementArea
 from pedpy.data.trajectory_data import TrajectoryData
+from pedpy.errors import AccelerationError
 from pedpy.methods.method_utils import (
     AccelerationCalculation,
+    _check_trajectory_data,
     _compute_individual_movement_acceleration,
 )
-
-
-class AccelerationError(Exception):
-    """Class reflecting errors when computing accelerations with PedPy."""
-
-    def __init__(self, message):
-        """Create AccelerationError with the given message.
-
-        Args:
-            message: Error message
-        """
-        self.message = message
 
 
 def compute_individual_acceleration(
@@ -34,9 +24,7 @@ def compute_individual_acceleration(
     frame_step: int,
     movement_direction: Optional[npt.NDArray[np.float64]] = None,
     compute_acceleration_components: bool = False,
-    acceleration_calculation: AccelerationCalculation = (
-        AccelerationCalculation.BORDER_EXCLUDE
-    ),
+    acceleration_calculation: AccelerationCalculation = AccelerationCalculation.BORDER_EXCLUDE,
 ) -> pd.DataFrame:
     r"""Compute the individual acceleration for each pedestrian.
 
@@ -56,8 +44,9 @@ def compute_individual_acceleration(
     These positions are called :math:`X(t_{k+n})`, :math:`X(t_{k-n})`
     respectively.
 
-    In order to compute the acceleration at time 't_k', we first calculate the
-    displacements :math:`\bar{X}` around 't_{k+n}' and 't_{k-n}':
+    In order to compute the acceleration at time :math:`t_k`, we first
+    calculate the displacements :math:`\bar{X}` around :math:`t_{k+n}` and
+    :math:`t_{k-n}`:
 
     .. math::
 
@@ -74,7 +63,7 @@ def compute_individual_acceleration(
 
         \Delta\bar{X}(t_k) = \bar{X}(t_{k+n}) - \bar{X}(t_{k-n})
 
-    divided by the square of the time interval '\Delta t':
+    divided by the square of the time interval :math:`\Delta t`:
 
     .. math::
 
@@ -123,9 +112,10 @@ def compute_individual_acceleration(
 
     Returns:
         DataFrame containing the columns 'id', 'frame', and 'acceleration' in
-        'm/s^2', 'a_x' and 'a_y' with the speed components in x and y direction
-        if :code:`compute_acceleration_components` is True
+        :math:`m/s^2`, 'a_x' and 'a_y' with the acceleration components
+        in x and y direction if :code:`compute_acceleration_components` is True
     """
+    _check_trajectory_data(traj_data)
     df_movement = _compute_individual_movement_acceleration(
         traj_data=traj_data,
         frame_step=frame_step,
@@ -147,7 +137,7 @@ def compute_mean_acceleration_per_frame(
     traj_data: TrajectoryData,
     individual_acceleration: pd.DataFrame,
     measurement_area: MeasurementArea,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     r"""Compute mean acceleration per frame inside a given measurement area.
 
     Computes the mean acceleration :math:`a_{mean}(t)` inside the measurement
@@ -177,8 +167,10 @@ def compute_mean_acceleration_per_frame(
             acceleration is computed
 
     Returns:
-        DataFrame containing the columns 'frame' and 'acceleration' in 'm/s^2'
+        DataFrame containing the columns 'frame' and 'acceleration' in
+        :math:`m/s^2`
     """
+    _check_trajectory_data(traj_data)
     if len(individual_acceleration.index) < len(traj_data.data.index):
         raise AccelerationError(
             f"Can not compute the mean acceleration, as the there are less "
@@ -191,18 +183,16 @@ def compute_mean_acceleration_per_frame(
             f"computing the individual acceleration."
         )
 
-    combined = traj_data.data.merge(
-        individual_acceleration, on=[ID_COL, FRAME_COL]
-    )
+    combined = traj_data.data.merge(individual_acceleration, on=[ID_COL, FRAME_COL])
     df_mean = (
-        combined[shapely.within(combined.point, measurement_area.polygon)]
-        .groupby(by=FRAME_COL)
-        .acceleration.mean()
+        combined[shapely.within(combined.point, measurement_area.polygon)].groupby(by=FRAME_COL).acceleration.mean()
     )
     df_mean = df_mean.reindex(
         list(range(traj_data.data.frame.min(), traj_data.data.frame.max() + 1)),
         fill_value=0.0,
     )
+    df_mean = df_mean.reset_index()
+    df_mean.columns = [FRAME_COL, ACC_COL]
     return df_mean
 
 
@@ -251,11 +241,11 @@ def compute_voronoi_acceleration(
             acceleration should be computed
 
     Returns:
-        DataFrame containing the columns 'frame' and 'acceleration' in 'm/s^2'
+        DataFrame containing the columns 'frame' and 'acceleration' in
+        :math:`m/s^2`
     """
-    if len(individual_acceleration.index) < len(
-        individual_voronoi_intersection.index
-    ):
+    _check_trajectory_data(traj_data)
+    if len(individual_acceleration.index) < len(individual_voronoi_intersection.index):
         raise AccelerationError(
             f"Can not compute the Voronoi acceleration, as the there are less "
             f"acceleration data (rows={len(individual_acceleration)}) than "
@@ -272,19 +262,15 @@ def compute_voronoi_acceleration(
         individual_acceleration,
         on=[ID_COL, FRAME_COL],
     )
-    df_voronoi[ACC_COL] = (
-        shapely.area(df_voronoi.intersection)
-        * df_voronoi.acceleration
-        / measurement_area.area
-    )
-    df_voronoi_acceleration = df_voronoi.groupby(
-        by=df_voronoi.frame
-    ).acceleration.sum()
+    df_voronoi[ACC_COL] = shapely.area(df_voronoi.intersection) * df_voronoi.acceleration / measurement_area.area
+    df_voronoi_acceleration = df_voronoi.groupby(by=df_voronoi.frame).acceleration.sum()
     df_voronoi_acceleration = df_voronoi_acceleration.reindex(
         list(range(traj_data.data.frame.min(), traj_data.data.frame.max() + 1)),
         fill_value=0.0,
     )
-    return pd.DataFrame(df_voronoi_acceleration)
+    df_voronoi_acceleration = df_voronoi_acceleration.reset_index()
+    df_voronoi_acceleration.columns = [FRAME_COL, ACC_COL]
+    return df_voronoi_acceleration
 
 
 def _compute_individual_acceleration(
@@ -316,43 +302,28 @@ def _compute_individual_acceleration(
 
     # Compute displacements in x and y direction
     movement_data[["dd_x", "dd_y"]] = (
-        shapely.get_coordinates(movement_data.end_position)
-        - shapely.get_coordinates(movement_data.mid_position)
-    ) - (
-        shapely.get_coordinates(movement_data.mid_position)
-        - shapely.get_coordinates(movement_data.start_position)
-    )
+        shapely.get_coordinates(movement_data.end_position) - shapely.get_coordinates(movement_data.mid_position)
+    ) - (shapely.get_coordinates(movement_data.mid_position) - shapely.get_coordinates(movement_data.start_position))
 
-    movement_data[ACC_COL] = (
-        np.linalg.norm(movement_data[["dd_x", "dd_y"]], axis=1)
-        / time_interval**2
-    )
+    movement_data[ACC_COL] = np.linalg.norm(movement_data[["dd_x", "dd_y"]], axis=1) / time_interval**2
 
     if movement_direction is not None:
         # Projection of the displacement onto the movement direction
         norm_movement_direction = np.dot(movement_direction, movement_direction)
         movement_data[["dd_x", "dd_y"]] = (
-            np.dot(
-                movement_data[["dd_x", "dd_y"]].to_numpy(), movement_direction
-            )[:, None]
+            np.dot(movement_data[["dd_x", "dd_y"]].to_numpy(), movement_direction)[:, None]
             * movement_direction
             * norm_movement_direction
         )
         movement_data[ACC_COL] = (
-            np.dot(
-                movement_data[["dd_x", "dd_y"]].to_numpy(), movement_direction
-            )
+            np.dot(movement_data[["dd_x", "dd_y"]].to_numpy(), movement_direction)
             / np.linalg.norm(movement_direction)
             / time_interval**2
         )
 
     if compute_acceleration_components:
-        movement_data[A_X_COL] = (
-            movement_data["dd_x"].to_numpy() / time_interval**2
-        )
-        movement_data[A_Y_COL] = (
-            movement_data["dd_y"].to_numpy() / time_interval**2
-        )
+        movement_data[A_X_COL] = movement_data["dd_x"].to_numpy() / time_interval**2
+        movement_data[A_Y_COL] = movement_data["dd_y"].to_numpy() / time_interval**2
         columns.append(A_X_COL)
         columns.append(A_Y_COL)
 

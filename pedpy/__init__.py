@@ -42,19 +42,39 @@ from .column_identifier import (
     X_COL,
     Y_COL,
 )
-from .data.geometry import MeasurementArea, MeasurementLine, WalkableArea
+from .data.geometry import (
+    AxisAlignedMeasurementArea,
+    MeasurementArea,
+    MeasurementLine,
+    WalkableArea,
+)
 from .data.trajectory_data import TrajectoryData
-from .io.trajectory_loader import (
+from .errors import (
+    AccelerationError,
+    GeometryError,
+    InputError,
     LoadTrajectoryError,
-    TrajectoryUnit,
-    load_trajectory,
-    load_trajectory_from_jupedsim_sqlite,
+    PedPyAttributeError,
+    PedPyError,
+    PedPyRuntimeError,
+    PedPyTypeError,
+    PedPyValueError,
+    SpeedError,
+)
+from .io.crowdit_loader import load_trajectory_from_crowdit, load_walkable_area_from_crowdit
+from .io.helper import TrajectoryUnit
+from .io.jupedsim_loader import load_trajectory_from_jupedsim_sqlite, load_walkable_area_from_jupedsim_sqlite
+from .io.pathfinder_loader import load_trajectory_from_pathfinder_csv, load_trajectory_from_pathfinder_json
+from .io.ped_data_archive_loader import (
     load_trajectory_from_ped_data_archive_hdf5,
     load_trajectory_from_txt,
-    load_trajectory_from_viswalk,
-    load_walkable_area_from_jupedsim_sqlite,
     load_walkable_area_from_ped_data_archive_hdf5,
 )
+from .io.trajectory_loader import (
+    load_trajectory,
+)
+from .io.vadere_loader import load_trajectory_from_vadere, load_walkable_area_from_vadere_scenario
+from .io.viswalk_loader import load_trajectory_from_viswalk
 from .methods.acceleration_calculator import (
     compute_individual_acceleration,
     compute_mean_acceleration_per_frame,
@@ -88,10 +108,12 @@ from .methods.method_utils import (
 )
 from .methods.profile_calculator import (
     DensityMethod,
+    RsetMethod,
     SpeedMethod,
     compute_density_profile,
     compute_grid_cell_polygon_intersection_area,
     compute_profiles,
+    compute_rset_map,
     compute_speed_profile,
     get_grid_cells,
 )
@@ -116,15 +138,16 @@ from .plotting.plotting import (
     PEDPY_PETROL,
     PEDPY_RED,
     plot_acceleration,
+    plot_crossing_speed_flow,
     plot_density,
     plot_density_at_line,
     plot_density_distribution,
-    plot_flow,
     plot_flow_at_line,
     plot_measurement_setup,
     plot_neighborhood,
     plot_nt,
     plot_profiles,
+    plot_rset_map,
     plot_speed,
     plot_speed_at_line,
     plot_speed_distribution,
@@ -133,8 +156,11 @@ from .plotting.plotting import (
     plot_voronoi_cells,
     plot_walkable_area,
 )
+from .preprocessing.trajectory_outlier_detection import detect_anomalies_in_trajectories
+from .preprocessing.trajectory_projector import correct_invalid_trajectories
 
 __all__ = [  # noqa: RUF022 disable sorting of __all__ for better maintenance
+    "AxisAlignedMeasurementArea",
     "MeasurementArea",
     "MeasurementLine",
     "WalkableArea",
@@ -146,8 +172,14 @@ __all__ = [  # noqa: RUF022 disable sorting of __all__ for better maintenance
     "load_trajectory_from_ped_data_archive_hdf5",
     "load_trajectory_from_txt",
     "load_trajectory_from_viswalk",
+    "load_trajectory_from_vadere",
     "load_walkable_area_from_jupedsim_sqlite",
     "load_walkable_area_from_ped_data_archive_hdf5",
+    "load_walkable_area_from_vadere_scenario",
+    "load_trajectory_from_pathfinder_json",
+    "load_walkable_area_from_crowdit",
+    "load_trajectory_from_crowdit",
+    "load_trajectory_from_pathfinder_csv",
     "compute_classic_density",
     "compute_line_density",
     "compute_passing_density",
@@ -169,10 +201,12 @@ __all__ = [  # noqa: RUF022 disable sorting of __all__ for better maintenance
     "compute_pair_distribution_function",
     "compute_STFT",
     "DensityMethod",
+    "RsetMethod",
     "SpeedMethod",
     "compute_density_profile",
     "compute_grid_cell_polygon_intersection_area",
     "compute_profiles",
+    "compute_rset_map",
     "compute_speed_profile",
     "get_grid_cells",
     "SpeedCalculation",
@@ -186,6 +220,8 @@ __all__ = [  # noqa: RUF022 disable sorting of __all__ for better maintenance
     "compute_individual_acceleration",
     "compute_mean_acceleration_per_frame",
     "compute_voronoi_acceleration",
+    "correct_invalid_trajectories",
+    "detect_anomalies_in_trajectories",
     "PEDPY_BLUE",
     "PEDPY_GREEN",
     "PEDPY_GREY",
@@ -195,12 +231,13 @@ __all__ = [  # noqa: RUF022 disable sorting of __all__ for better maintenance
     "plot_density",
     "plot_density_at_line",
     "plot_density_distribution",
-    "plot_flow",
+    "plot_crossing_speed_flow",
     "plot_flow_at_line",
     "plot_measurement_setup",
     "plot_neighborhood",
     "plot_nt",
     "plot_profiles",
+    "plot_rset_map",
     "plot_speed",
     "plot_speed_at_line",
     "plot_speed_distribution",
@@ -240,4 +277,13 @@ __all__ = [  # noqa: RUF022 disable sorting of __all__ for better maintenance
     "END_POSITION_COL",
     "WINDOW_SIZE_COL",
     "__version__",
+    "AccelerationError",
+    "GeometryError",
+    "InputError",
+    "PedPyAttributeError",
+    "PedPyError",
+    "PedPyRuntimeError",
+    "PedPyTypeError",
+    "PedPyValueError",
+    "SpeedError",
 ]

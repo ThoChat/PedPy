@@ -8,17 +8,7 @@ import numpy as np
 import shapely
 from numpy.typing import NDArray
 
-
-class GeometryError(Exception):
-    """Class reflecting errors when creating PedPy geometry objects."""
-
-    def __init__(self, message):
-        """Create GeometryError with the given message.
-
-        Args:
-            message: Error message
-        """
-        self.message = message
+from pedpy.errors import GeometryError, PedPyAttributeError
 
 
 @dataclass
@@ -63,9 +53,8 @@ class WalkableArea:
 
         for hole in self._polygon.interiors:
             if not self._polygon.covers(hole):
-                raise GeometryError(
-                    "Holes need to be inside the walkable area."
-                )
+                raise GeometryError("Holes need to be inside the walkable area.")
+        self._polygon = shapely.normalize(self._polygon)
         shapely.prepare(self._polygon)
         self._frozen = True
 
@@ -77,9 +66,7 @@ class WalkableArea:
             value: value to be set to attribute
         """
         if self._frozen:
-            raise AttributeError(
-                "Walkable area can not be changed after " "construction!"
-            )
+            raise PedPyAttributeError("Walkable area can not be changed after construction!")
         return super().__setattr__(attr, value)
 
     @property
@@ -148,22 +135,12 @@ class MeasurementArea:
         try:
             self._polygon = _create_polygon_from_input(coordinates)
         except Exception as exc:
-            raise GeometryError(
-                f"Could not create measurement area from the given "
-                f"input: {exc}."
-            ) from exc
+            raise GeometryError(f"Could not create measurement area from the given input: {exc}.") from exc
 
         if self._polygon.interiors:
-            raise GeometryError(
-                "Measurement area can not be created from polygon with holes."
-            )
+            raise GeometryError("Measurement area can not be created from polygon with holes.")
 
-        if (
-            not shapely.difference(
-                self._polygon.convex_hull, self._polygon
-            ).area
-            == 0
-        ):
+        if not shapely.difference(self._polygon.convex_hull, self._polygon).area == 0:
             raise GeometryError("Measurement areas needs to be convex.")
 
         shapely.prepare(self._polygon)
@@ -177,9 +154,7 @@ class MeasurementArea:
             value: value to be set to attribute
         """
         if self._frozen:
-            raise AttributeError(
-                "Measurement area can not be changed after construction!"
-            )
+            raise PedPyAttributeError("Measurement area can not be changed after construction!")
         return super().__setattr__(attr, value)
 
     @property
@@ -208,6 +183,81 @@ class MeasurementArea:
             Measurement area as :class:`shapely.Polygon`.
         """
         return self._polygon
+
+    @property
+    def bounds(self):
+        """Minimum bounding region (minx, miny, maxx, maxy).
+
+        Returns:
+            Minimum bounding region (minx, miny, maxx, maxy)
+        """
+        return self._polygon.bounds
+
+
+###############################################################################
+# Axis Aligned MeasurmentArea
+###############################################################################
+class AxisAlignedMeasurementArea(MeasurementArea):
+    """Axis-aligned areas to study pedestrian dynamics.
+
+    An axis aligned measurement area is defined as an area, which is
+    axis-algined, convex, simple, and covers a non-zero area.
+    """
+
+    _frozen = False
+
+    def __init__(self, x_min: float, y_min: float, x_max: float, y_max: float):
+        """Create an axis-aligned measurement area from the given input.
+
+        Creates a rectangular axis-aligned measurement area using the provided
+        coordinates. The resulting area must be valid and have a non-zero area.
+        Raises a GeometryError if the polygon cannot be created or is invalid.
+
+        Args:
+            x_min (float): Minimum x-coordinate of the measurement area.
+            y_min (float): Minimum y-coordinate of the measurement area.
+            x_max (float): Maximum x-coordinate of the measurement area.
+            y_max (float): Maximum y-coordinate of the measurement area.
+
+        Raises:
+            GeometryError: If the measurement area cannot be created or is
+                invalid.
+        """
+        self._polygon = shapely.box(xmin=x_min, ymin=y_min, xmax=x_max, ymax=y_max)
+
+        if self._polygon.area == 0:
+            raise GeometryError("Axis-aligned measurement area needs to cover a non-zero area.")
+
+        shapely.prepare(self._polygon)
+        self._frozen = True
+
+    @classmethod
+    def from_measurement_area(cls, measurement_area: MeasurementArea) -> "AxisAlignedMeasurementArea":
+        """Create an AxisAlignedMeasurementArea from a MeasurementArea.
+
+        This method creates an axis-aligned measurement area that bounds the
+        given measurement area. Given the blue measurement area in the
+        following figure, the axis-aligned measurement area is the red rectangle
+        that covers the blue area. The axis-aligned measurement area is defined
+        by the minimum and maximum x and y coordinates of the measurement area.
+
+        .. image:: /images/axis_aligned_measurement_area_from_ma.svg
+            :width: 60 %
+            :align: center
+
+        Args:
+            measurement_area (MeasurementArea): The measurement area from which
+                to create the axis-aligned measurement area.
+
+        Returns:
+            AxisAlignedMeasurementArea: An instance of
+                AxisAlignedMeasurementArea that bounds the given measurement
+                area.
+
+
+        """
+        bounds = measurement_area.bounds
+        return cls(*bounds)
 
 
 ###############################################################################
@@ -244,25 +294,17 @@ class MeasurementLine:
             else:
                 self._line = shapely.LineString(coordinates)
         except Exception as exc:
-            raise GeometryError(
-                f"Could not create measurement line from the given "
-                f"coordinates: {exc}."
-            ) from exc
+            raise GeometryError(f"Could not create measurement line from the given coordinates: {exc}.") from exc
 
         if not isinstance(self._line, shapely.LineString):
-            raise GeometryError(
-                "Could not create a line string from the given input."
-            )
+            raise GeometryError("Could not create a line string from the given input.")
 
         if len(self._line.coords) != 2:
             raise GeometryError(
-                f"Measurement line may only consists of 2 points, but "
-                f"{len(self._line.coords)} points given."
+                f"Measurement line may only consists of 2 points, but {len(self._line.coords)} points given."
             )
         if self._line.length == 0:
-            raise GeometryError(
-                "Start and end point of measurement line need to be different."
-            )
+            raise GeometryError("Start and end point of measurement line need to be different.")
 
         self._frozen = True
 
@@ -274,9 +316,7 @@ class MeasurementLine:
             value: value to be set to attribute
         """
         if self._frozen:
-            raise AttributeError(
-                "Measurement line can not be changed after construction!"
-            )
+            raise PedPyAttributeError("Measurement line can not be changed after construction!")
         return super().__setattr__(attr, value)
 
     @property
@@ -339,8 +379,7 @@ def _polygon_from_wkt(wkt_input: str) -> shapely.Polygon:
         wkt_type = shapely.from_wkt(wkt_input)
     except Exception as exc:
         raise GeometryError(
-            f"Could not create geometry objects from the given WKT: "
-            f"{wkt_input}. See following error message:\n{exc}"
+            f"Could not create geometry objects from the given WKT: {wkt_input}. See following error message:\n{exc}"
         ) from exc
 
     try:
@@ -355,12 +394,7 @@ def _polygon_from_wkt(wkt_input: str) -> shapely.Polygon:
 
 
 def _polygon_from_shapely(
-    geometry_input: (
-        shapely.Polygon
-        | shapely.MultiPolygon
-        | shapely.GeometryCollection
-        | shapely.MultiPoint
-    ),
+    geometry_input: (shapely.Polygon | shapely.MultiPolygon | shapely.GeometryCollection | shapely.MultiPoint),
 ) -> shapely.Polygon:
     def _polygons_from_multi_polygon(
         multi_polygon: shapely.MultiPolygon,
@@ -385,10 +419,7 @@ def _polygon_from_shapely(
     ) -> List[shapely.Polygon]:
         polygons = []
         for geo in geometry_collection.geoms:
-            if (
-                shapely.get_type_id(geo)
-                == shapely.GeometryType.GEOMETRYCOLLECTION
-            ):
+            if shapely.get_type_id(geo) == shapely.GeometryType.GEOMETRYCOLLECTION:
                 polygons += _polygons_from_geometry_collection(geo)
             elif shapely.get_type_id(geo) == shapely.GeometryType.MULTIPOLYGON:
                 polygons += _polygons_from_multi_polygon(geo)
@@ -404,14 +435,9 @@ def _polygon_from_shapely(
         return polygons
 
     polygons = []
-    if (
-        shapely.get_type_id(geometry_input)
-        == shapely.GeometryType.GEOMETRYCOLLECTION
-    ):
+    if shapely.get_type_id(geometry_input) == shapely.GeometryType.GEOMETRYCOLLECTION:
         polygons += _polygons_from_geometry_collection(geometry_input)
-    elif (
-        shapely.get_type_id(geometry_input) == shapely.GeometryType.MULTIPOLYGON
-    ):
+    elif shapely.get_type_id(geometry_input) == shapely.GeometryType.MULTIPOLYGON:
         polygons += _polygons_from_multi_polygon(geometry_input)
     elif shapely.get_type_id(geometry_input) == shapely.GeometryType.LINEARRING:
         polygons += _polygons_from_linear_ring(geometry_input)
@@ -426,8 +452,7 @@ def _polygon_from_shapely(
     polygon = shapely.union_all(polygons)
     if not isinstance(polygon, shapely.Polygon):
         raise GeometryError(
-            "Input can not be combined to one single polygon. "
-            "Make sure, that parts of the input are connected."
+            "Input can not be combined to one single polygon. Make sure, that parts of the input are connected."
         )
     return polygon
 
@@ -437,12 +462,18 @@ def _polygon_from_coordinates(
     *,
     holes: Optional[List[Tuple[Number]] | shapely.Point] = None,
 ) -> shapely.Polygon:
-    return shapely.Polygon(coordinates, holes=holes)
+    poly = shapely.Polygon(coordinates)
+    if holes is None:
+        return poly
+
+    for hole in holes:
+        obs = shapely.Polygon(hole)
+        poly = poly.difference(obs)
+
+    return poly
 
 
-def _create_polygon_from_input(
-    polygon_input: Any, holes: Optional[List[Any]] = None
-) -> shapely.Polygon:
+def _create_polygon_from_input(polygon_input: Any, holes: Optional[List[Any]] = None) -> shapely.Polygon:
     """Convince function to create a shapely.Polygon from different input types.
 
     Can create a shapely.Polygon from:
@@ -470,31 +501,22 @@ def _create_polygon_from_input(
         ),
     ):
         if holes is not None:
-            raise GeometryError(
-                "If polygon is of type shapely.Polygon additional holes are "
-                "not allowed."
-            )
+            raise GeometryError("If polygon is of type shapely.Polygon additional holes are not allowed.")
         return_poly = _polygon_from_shapely(polygon_input)
     elif isinstance(polygon_input, str):
         if holes is not None:
-            raise GeometryError(
-                "If polygon is of type WKT additional holes are not allowed."
-            )
+            raise GeometryError("If polygon is of type WKT additional holes are not allowed.")
         try:
             return_poly = _polygon_from_wkt(polygon_input)
         except Exception as exc:
             raise GeometryError(
-                f"Could not create polygon from the given WKT: {polygon_input}."
-                f" See following error message:\n{exc}"
+                f"Could not create polygon from the given WKT: {polygon_input}. See following error message:\n{exc}"
             ) from exc
     else:
         try:
             return_poly = _polygon_from_coordinates(polygon_input, holes=holes)
         except Exception as exc:
-            raise GeometryError(
-                f"Could not create polygon from the given input: "
-                f"{polygon_input}."
-            ) from exc
+            raise GeometryError(f"Could not create polygon from the given input: {polygon_input}.") from exc
 
     if not return_poly.is_simple or return_poly.area == 0:
         raise GeometryError(

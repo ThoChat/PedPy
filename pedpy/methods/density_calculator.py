@@ -17,9 +17,10 @@ from pedpy.column_identifier import (
 )
 from pedpy.data.geometry import MeasurementArea, MeasurementLine
 from pedpy.data.trajectory_data import TrajectoryData
+from pedpy.errors import InputError
 from pedpy.methods.method_utils import (
-    InputError,
     _apply_lambda_for_intersecting_frames,
+    _check_trajectory_data,
     _compute_partial_line_length,
     compute_intersecting_polygons,
     is_species_valid,
@@ -56,10 +57,9 @@ def compute_classic_density(
     Returns:
         DataFrame containing the columns 'frame' and 'density' in :math:`1/m^2`
     """
+    _check_trajectory_data(traj_data)
     peds_in_area = TrajectoryData(
-        traj_data.data[
-            shapely.contains(measurement_area.polygon, traj_data.data.point)
-        ],
+        traj_data.data[shapely.contains(measurement_area.polygon, traj_data.data.point)],
         traj_data.frame_rate,
     )
     peds_in_area_per_frame = _get_num_peds_per_frame(peds_in_area)
@@ -67,11 +67,12 @@ def compute_classic_density(
     density = peds_in_area_per_frame / measurement_area.area
 
     # Rename column and add missing zero values
-    density.columns = [DENSITY_COL]
     density = density.reindex(
         list(range(traj_data.data.frame.min(), traj_data.data.frame.max() + 1)),
         fill_value=0.0,
     )
+    density = density.reset_index()
+    density.columns = [FRAME_COL, DENSITY_COL]
 
     return density
 
@@ -111,11 +112,12 @@ def compute_voronoi_density(
             computed
 
     Returns:
-        DataFrame containing the columns 'id' and 'density' in :math:`1/m^2`,
+        DataFrame containing the columns 'frame' and 'density' in :math:`1/m^2`,
         DataFrame containing the columns: 'id', 'frame', 'polygon' which
-        contains the Voronoi polygon of the pedestrian, 'intersection' which
-        contains the intersection area of the Voronoi polygon and the given
-        measurement area.
+        contains the Voronoi polygon of the pedestrian, 'density' in
+        :math:`1/m^2` which contains the individual density of the pedestrian,
+        'intersection' which contains the intersection area of the Voronoi
+        polygon and the given measurement area.
 
     """
     df_intersecting = compute_intersecting_polygons(
@@ -130,17 +132,11 @@ def compute_voronoi_density(
     )
 
     relation_col = "relation"
-    df_combined[relation_col] = shapely.area(
-        df_combined.intersection
-    ) / shapely.area(df_combined.polygon)
+    df_combined[relation_col] = shapely.area(df_combined.intersection) / shapely.area(df_combined.polygon)
 
-    df_voronoi_density = (
-        df_combined.groupby(df_combined.frame).relation.sum()
-        / measurement_area.area
-    ).to_frame()
+    df_voronoi_density = (df_combined.groupby(df_combined.frame).relation.sum() / measurement_area.area).to_frame()
 
     # Rename column and add missing zero values
-    df_voronoi_density.columns = [DENSITY_COL]
     df_voronoi_density = df_voronoi_density.reindex(
         list(
             range(
@@ -150,6 +146,8 @@ def compute_voronoi_density(
         ),
         fill_value=0.0,
     )
+    df_voronoi_density = df_voronoi_density.reset_index()
+    df_voronoi_density.columns = [FRAME_COL, DENSITY_COL]
 
     return (
         df_voronoi_density,
@@ -157,9 +155,7 @@ def compute_voronoi_density(
     )
 
 
-def compute_passing_density(
-    *, density_per_frame: pd.DataFrame, frames: pd.DataFrame
-) -> pd.DataFrame:
+def compute_passing_density(*, density_per_frame: pd.DataFrame, frames: pd.DataFrame) -> pd.DataFrame:
     r"""Compute the individual density of the pedestrian who pass the area.
 
     The passing density for each pedestrian :math:`\rho_{passing}(i)` is the
@@ -179,11 +175,11 @@ def compute_passing_density(
     * :math:`t_{in}(i) = f_{in}(i) / fps` is the time pedestrian :math:`i`
       crosses the first line.
     * :math:`t_{out}(i) = f_{out}(i) / fps` when pedestrian :math:`i` crosses
-    the second line.
+      the second line.
     * :math:`f_{in}` and :math:`f_{out}` are the frames at which pedestrian
-    :math:`i` crosses the first and second lines, respectively.
+      :math:`i` crosses the first and second lines, respectively.
     * :math:`fps` is the frame rate of the trajectory data, defined by
-    :attr:`~trajectory_data.TrajectoryData.frame_rate` of the trajectory data.
+      :attr:`~trajectory_data.TrajectoryData.frame_rate` of the trajectory data.
 
     Args:
         density_per_frame (pd.DataFrame): density per frame, result from
@@ -201,14 +197,15 @@ def compute_passing_density(
     for _, row in frames.iterrows():
         densities.append(
             density_per_frame[
-                density_per_frame.index.to_series().between(
+                density_per_frame.frame.between(
                     int(row.entering_frame),
                     int(row.leaving_frame),
                     inclusive="left",
                 )
-            ].mean()
+            ].density.mean()
         )
     density.density = np.array(densities)
+
     return density
 
 
@@ -222,9 +219,7 @@ def _get_num_peds_per_frame(traj_data: TrajectoryData) -> pd.DataFrame:
         DataFrame containing the columns: 'frame' (as index) and 'num_peds'.
     """
     num_peds_per_frame = (
-        traj_data.data.groupby(traj_data.data.frame)
-        .agg({ID_COL: "count"})
-        .rename(columns={ID_COL: COUNT_COL})
+        traj_data.data.groupby(traj_data.data.frame).agg({ID_COL: "count"}).rename(columns={ID_COL: COUNT_COL})
     )
 
     return num_peds_per_frame
@@ -265,7 +260,10 @@ def compute_line_density(
             the species of every pedestrian intersecting the line,
             result from :func:`~speed_calculator.compute_species`
     Returns:
-        Dataframe containing columns 'frame', 'p_sp+1', 'p_sp-1', 'density'
+        Dataframe containing columns 'frame', 'p_sp+1' which contains the
+        density in :math:`1/m^2` for species +1, 'p_sp-1' which contains the
+        density in :math:`1/m^2` for species -1, 'density' which contains the
+        density at the line in :math:`1/m^2`.
     """
     if not is_species_valid(
         species=species,
@@ -284,14 +282,11 @@ def compute_line_density(
         measurement_line=measurement_line,
         species=species,
         lambda_for_group=lambda group, line: (
-            group[DENSITY_COL]
-            * (_compute_partial_line_length(group[POLYGON_COL], line))
+            group[DENSITY_COL] * (_compute_partial_line_length(group[POLYGON_COL], line))
         ).sum(),
         column_id_sp1=DENSITY_SP1_COL,
         column_id_sp2=DENSITY_SP2_COL,
     )
 
-    result[DENSITY_COL] = result[DENSITY_SP1_COL].fillna(0) + result[
-        DENSITY_SP2_COL
-    ].fillna(0)
+    result[DENSITY_COL] = result[DENSITY_SP1_COL].fillna(0) + result[DENSITY_SP2_COL].fillna(0)
     return result

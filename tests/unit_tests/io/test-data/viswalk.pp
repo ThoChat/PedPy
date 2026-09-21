@@ -1,11 +1,11 @@
 ﻿$VISION
 * File: C:\Users\Public\Documents\PTV Vision\PTV Vissim 2023\Examples Training\Pedestrians\Standards & Guidelines\RiMEA\RiMEA Test 12 only original V2024.inpx
-* Comment: 
+* Comment:
 * Date: 02/10/2023 15:28:43
 * Application: PTV Vissim 2024.00-02* [267607]
-* 
+*
 * Table: Pedestrians In Network
-* 
+*
 * NO: No, Number (Unique pedestrian number)
 * FRAME: Frame, Frame
 * COORDCENTX: CoordCentX, Coordinate center (x) (X-coordinate of pedestrian’s center)
@@ -20,7 +20,7 @@
 * NEARNEIGHBDIST: NearNeighbDist, Nearest neighbor - distance (Distance to the nearest neighbor) [m]
 * MOTIONSTATE: MotionState, Motion state (Current motion state of the pedestrian)
 * MARKREM: MarkRem, Marked for removal (Pedestrian is marked for removal from the Vissim network. The pedestrian will be deleted at the end of the time step.)
-* 
+*
 * No;Frame;CoordCentX;CoordCentY;SimSec;ConstrElNo;DesSpeed;Speed;ExperDens;OrientationAngle;NearNeighb;NearNeighbDist;MotionState;MarkRem
 * Number;Frame;Coordinate center (x);Coordinate center (y);Simulation second;Construction element number;Desired speed;Speed;Experienced density;Orientation angle;Nearest neighbor;Nearest neighbor - distance;Motion state;Marked for removal
 *

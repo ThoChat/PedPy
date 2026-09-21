@@ -2,8 +2,8 @@ name: pedpy-ci
 
 on:
   schedule:
-    # Runs at 2:00 am each day
-    - cron: '00 2 * * *'
+    # Runs at 02:00 a.m. each Sunday
+    - cron: '00 2 * * 0'
   push:
     branches:
       - main
@@ -14,6 +14,14 @@ on:
     branches:
       - main
       - rls-*
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: write
 
 jobs:
   pre-build-checks:
@@ -27,12 +35,12 @@ jobs:
 
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -54,18 +62,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-24.04, macos-13, macos-14, macos-15, windows-latest ]
+        os: [ ubuntu-24.04, macos-14, macos-15, macos-26, windows-latest ]
         python-version: [ '3.11' ]
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -82,7 +90,7 @@ jobs:
           python3 -m pytest --cov=pedpy --cov-report=xml -vv -s tests
 
       - name: Upload results to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         if: matrix.os == 'ubuntu-24.04'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -95,14 +103,14 @@ jobs:
 
       - name: Upload wheel as artifact
         if: matrix.os == 'ubuntu-24.04'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
       - name: Upload notebooks and demo files as artifacts
         if: matrix.os == 'ubuntu-24.04'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: demos_usage
           path: |
@@ -113,23 +121,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-24.04, macos-13, macos-14, macos-15, windows-latest ]
-        python-version: [ '3.11', '3.12' , '3.13']
+        os: [ ubuntu-24.04, macos-14, macos-15, macos-26, windows-latest ]
+        python-version: [ '3.11', '3.12' , '3.13', '3.14']
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Download notebooks and demo files as artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: demos_usage
 
       - name: Download wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -168,7 +176,7 @@ jobs:
 
     steps:
       - name: Download wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -177,3 +185,9 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: false
