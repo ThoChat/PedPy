@@ -17,7 +17,7 @@ from scipy.signal import stft, welch
 
 
 def compute_STFT(
-    signal_series: str,
+    signal_series: pd.Series,
     frame_rate: int,
     segments_length: int = None,
     overlap_length: int = None,
@@ -76,7 +76,7 @@ def compute_STFT(
 
     # Set default zeros_padded it None:
     if zeros_padded is None:
-        zeros_padded = 2 * segments_length
+        zeros_padded = 5 * segments_length
 
     # Extract signal data and compute STFT
     f, t, Zxx = stft(
@@ -95,9 +95,7 @@ def compute_STFT(
                 f, len(t)
             ),  # Repeat each frequency value for each time step
             "Time": np.tile(t, len(f)),  # Tile time values across frequencies
-            "Magnitude": np.abs(
-                Zxx
-            ).flatten(),  # Flatten the STFT magnitude values
+            "Magnitude": np.abs(Zxx).flatten(),  # Flatten the STFT magnitude values
             "Phase": np.angle(Zxx).flatten(),  # Flatten the phase values
         }
     )
@@ -149,7 +147,7 @@ def compute_welch_spectral_distribution(
 
     # Set default zeros_padded it None:
     if zeros_padded is None:
-        zeros_padded = 2 * segments_length
+        zeros_padded = 5 * segments_length
 
     # Extract signal data and compute STFT
     f, Pxx = welch(
