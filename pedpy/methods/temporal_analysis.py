@@ -1,6 +1,15 @@
 """Module containing functions to compute temporal analysis methods.
 
-For example: Short-Time Fourier Transform (STFT) and Welch's method for spectral analysis.
+For example: Short-Time Fourier Transform (STFT) and Welch's method for
+spectral analysis.
+
+Unlike the other calculators in :mod:`pedpy.methods`, the functions in this
+module operate on a plain :class:`pandas.Series` rather than on
+:class:`~pedpy.data.trajectory_data.TrajectoryData` directly. Frequency
+analysis is commonly applied to derived per-pedestrian signals (e.g. a sway
+feature extracted from the raw trajectory) that have no fixed representation
+in :class:`~pedpy.data.trajectory_data.TrajectoryData`, so the functions stay
+signal-agnostic and take whichever series the caller wants to analyze.
 """
 
 from typing import Optional
@@ -9,10 +18,44 @@ import numpy as np
 import pandas as pd
 from scipy.signal import stft, welch
 
+from pedpy.column_identifier import FREQUENCY_COL, MAGNITUDE_COL, PHASE_COL, POWER_COL, TIME_COL
+from pedpy.errors import InputError
+
+
+def _validate_signal_series_input(
+    *,
+    signal_series: pd.Series,
+    frame_rate: float,
+    segments_length: Optional[int],
+    overlap_length: Optional[int],
+) -> None:
+    if signal_series.empty:
+        raise InputError("signal_series must not be empty.")
+
+    if frame_rate <= 0:
+        raise InputError(f"frame_rate must be positive, but is {frame_rate}.")
+
+    if segments_length is not None:
+        if segments_length <= 0:
+            raise InputError(f"segments_length must be positive, but is {segments_length}.")
+
+        if segments_length > len(signal_series):
+            raise InputError(
+                "segments_length must not be larger than the length of "
+                f"signal_series ({len(signal_series)}), but is {segments_length}."
+            )
+
+        if overlap_length is not None and overlap_length >= segments_length:
+            raise InputError(
+                f"overlap_length ({overlap_length}) must be smaller than "
+                f"segments_length ({segments_length})."
+            )
+
 
 def compute_stft(
+    *,
     signal_series: pd.Series,
-    frame_rate: int,
+    frame_rate: float,
     segments_length: Optional[int] = None,
     overlap_length: Optional[int] = None,
     zeros_padded: Optional[int] = None,
@@ -37,7 +80,7 @@ def compute_stft(
 
     Args:
         signal_series (pd.Series): A pandas Series containing data values measured at a constant time interval.
-        frame_rate (int): The frame rate of the signal data. The frame rate
+        frame_rate (float): The frame rate of the signal data. The frame rate
             has to remain constant throughout the whole dataset.
         segments_length (int, optional): Length of each segment for the STFT window.
             Defaults to 5 times `frame_rate`.
@@ -51,14 +94,21 @@ def compute_stft(
 
     Returns:
         pd.DataFrame: A DataFrame containing the following columns:
-            - `"Frequency"`: The frequency bins of the STFT.
-            - `"Time"`: The time bins corresponding to the STFT computation.
-            - `"Magnitude"`: The absolute magnitude of the STFT at each
+            - :data:`~pedpy.column_identifier.FREQUENCY_COL`: The frequency bins of the STFT.
+            - :data:`~pedpy.column_identifier.TIME_COL`: The time bins corresponding to the STFT computation.
+            - :data:`~pedpy.column_identifier.MAGNITUDE_COL`: The absolute magnitude of the STFT at each
               time-frequency point.
-            - `"Phase"`: The phase of the STFT at each time-frequency point.
+            - :data:`~pedpy.column_identifier.PHASE_COL`: The phase of the STFT at each time-frequency point.
     """
+    _validate_signal_series_input(
+        signal_series=signal_series,
+        frame_rate=frame_rate,
+        segments_length=segments_length,
+        overlap_length=overlap_length,
+    )
+
     if segments_length is None:
-        segments_length = frame_rate * 5
+        segments_length = int(frame_rate * 5)
 
     if overlap_length is None:
         overlap_length = segments_length // 2
@@ -77,17 +127,18 @@ def compute_stft(
 
     return pd.DataFrame(
         {
-            "Frequency": np.repeat(f, len(t)),
-            "Time": np.tile(t, len(f)),
-            "Magnitude": np.abs(zxx).flatten(),
-            "Phase": np.angle(zxx).flatten(),
+            FREQUENCY_COL: np.repeat(f, len(t)),
+            TIME_COL: np.tile(t, len(f)),
+            MAGNITUDE_COL: np.abs(zxx).flatten(),
+            PHASE_COL: np.angle(zxx).flatten(),
         }
     )
 
 
 def compute_welch_spectral_distribution(
+    *,
     signal_series: pd.Series,
-    frame_rate: int,
+    frame_rate: float,
     segments_length: Optional[int] = None,
     overlap_length: Optional[int] = None,
     zeros_padded: Optional[int] = None,
@@ -102,7 +153,7 @@ def compute_welch_spectral_distribution(
 
     Args:
         signal_series (pd.Series): A pandas Series containing data values measured at a constant time interval.
-        frame_rate (int): The frame rate of the signal data. The frame rate
+        frame_rate (float): The frame rate of the signal data. The frame rate
             has to remain constant throughout the whole dataset.
         segments_length (int, optional): Length of each segment used to
             estimate the PSD. Defaults to one third of `signal_series` length.
@@ -116,9 +167,16 @@ def compute_welch_spectral_distribution(
 
     Returns:
         pd.DataFrame: A DataFrame containing the following columns:
-            - `"Frequency"`: The frequency bins of the spectral distribution.
-            - `"Power"`: The power spectral density at each frequency bin.
+            - :data:`~pedpy.column_identifier.FREQUENCY_COL`: The frequency bins of the spectral distribution.
+            - :data:`~pedpy.column_identifier.POWER_COL`: The power spectral density at each frequency bin.
     """
+    _validate_signal_series_input(
+        signal_series=signal_series,
+        frame_rate=frame_rate,
+        segments_length=segments_length,
+        overlap_length=overlap_length,
+    )
+
     if segments_length is None:
         segments_length = len(signal_series) // 3
 
@@ -139,7 +197,7 @@ def compute_welch_spectral_distribution(
 
     return pd.DataFrame(
         {
-            "Frequency": f,
-            "Power": pxx,
+            FREQUENCY_COL: f,
+            POWER_COL: pxx,
         }
     )
