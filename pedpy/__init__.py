@@ -127,7 +127,7 @@ from .methods.speed_calculator import (
     compute_voronoi_speed,
 )
 from .methods.temporal_analysis import (
-    compute_STFT,
+    compute_stft,
     compute_welch_spectral_distribution,
 )
 from .plotting.plotting import (
@@ -199,7 +199,8 @@ __all__ = [  # noqa: RUF022 disable sorting of __all__ for better maintenance
     "is_species_valid",
     "is_trajectory_valid",
     "compute_pair_distribution_function",
-    "compute_STFT",
+    "compute_stft",
+    "compute_welch_spectral_distribution",
     "DensityMethod",
     "RsetMethod",
     "SpeedMethod",
