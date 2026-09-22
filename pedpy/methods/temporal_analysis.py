@@ -47,8 +47,7 @@ def _validate_signal_series_input(
 
         if overlap_length is not None and overlap_length >= segments_length:
             raise InputError(
-                f"overlap_length ({overlap_length}) must be smaller than "
-                f"segments_length ({segments_length})."
+                f"overlap_length ({overlap_length}) must be smaller than segments_length ({segments_length})."
             )
 
 

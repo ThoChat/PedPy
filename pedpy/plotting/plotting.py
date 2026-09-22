@@ -573,9 +573,7 @@ def plot_stft(
     x_label = kwargs.pop("x_label", "time / s")
     y_label = kwargs.pop("y_label", "frequency / Hz")
 
-    magnitude = stft_result.pivot_table(
-        index=FREQUENCY_COL, columns=TIME_COL, values=MAGNITUDE_COL
-    )
+    magnitude = stft_result.pivot_table(index=FREQUENCY_COL, columns=TIME_COL, values=MAGNITUDE_COL)
     vmin = kwargs.pop("vmin", np.nanmin(magnitude.to_numpy()))
     vmax = kwargs.pop("vmax", np.nanmax(magnitude.to_numpy()))
 
