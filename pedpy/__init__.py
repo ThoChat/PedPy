@@ -155,10 +155,12 @@ from .plotting.plotting import (
     plot_speed,
     plot_speed_at_line,
     plot_speed_distribution,
+    plot_stft,
     plot_time_distance,
     plot_trajectories,
     plot_voronoi_cells,
     plot_walkable_area,
+    plot_welch_spectrum,
 )
 from .preprocessing.trajectory_outlier_detection import detect_anomalies_in_trajectories
 from .preprocessing.trajectory_projector import correct_invalid_trajectories
@@ -246,10 +248,12 @@ __all__ = [  # noqa: RUF022 disable sorting of __all__ for better maintenance
     "plot_speed",
     "plot_speed_at_line",
     "plot_speed_distribution",
+    "plot_stft",
     "plot_time_distance",
     "plot_trajectories",
     "plot_voronoi_cells",
     "plot_walkable_area",
+    "plot_welch_spectrum",
     "plot_acceleration",
     "ID_COL",
     "FRAME_COL",
